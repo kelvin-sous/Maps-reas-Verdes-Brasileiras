@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import filedialog
 from math import radians, cos, sin, sqrt, atan2
 
-GOOGLE_MAPS_API_KEY = "AIzaSyDhIr300ytFXCYQWGZulp_T8sC3XZz-6tU"
+GOOGLE_MAPS_API_KEY = "SUA_API_GOOGLE"
 
 def abrir_arquivo():
     root = tk.Tk()
