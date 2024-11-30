@@ -8,8 +8,11 @@ import heapq
 import time
 import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap
+import osmnx as ox
+import networkx as nx
+from math import radians, sin, cos, sqrt, atan2
 
-GOOGLE_MAPS_API_KEY = "SUA_API_GOOGLE"
+GOOGLE_MAPS_API_KEY = "AIzaSyDhIr300ytFXCYQWGZulp_T8sC3XZz-6tU"
 
 def abrir_arquivo():
     root = tk.Tk()
@@ -142,6 +145,50 @@ def a_star(grafo, inicio, fim):
 
     return float('inf'), []
 
+def a_star_real(lat_inicio, lng_inicio, lat_destino, lng_destino):
+    # Baixar o grafo da região usando OpenStreetMap
+    print("Baixando o grafo da região...")
+    grafo = ox.graph_from_point((lat_inicio, lng_inicio), dist=50000, network_type='drive')
+
+    # Encontrar os nós mais próximos no grafo para as coordenadas de início e destino
+    origem = ox.distance.nearest_nodes(grafo, lng_inicio, lat_inicio)
+    destino = ox.distance.nearest_nodes(grafo, lng_destino, lat_destino)
+
+    # Calcular a rota mais curta usando o algoritmo A*
+    try:
+        caminho = nx.astar_path(grafo, origem, destino, weight='length')
+        total_nos = len(caminho)
+        distancia = 0
+
+        for i, (atual, proximo) in enumerate(zip(caminho[:-1], caminho[1:]), start=1):
+            # Calcular a distância entre os nós
+            distancia += nx.get_edge_attributes(grafo, 'length')[(atual, proximo, 0)]
+
+        # Converter a distância para quilômetros
+        return distancia / 1000, caminho
+    except nx.NetworkXNoPath:
+        print("Nenhum caminho encontrado entre os pontos no grafo OpenStreetMap.")
+        return None, []
+
+def calcular_rota_osm(lat_inicio, lng_inicio, lat_destino, lng_destino):
+    """
+    Usa o grafo de ruas obtido pelo OpenStreetMap para calcular o caminho mais curto usando A*.
+    """
+    lugar = "São Paulo, Brazil"
+    print(f"Baixando dados do OpenStreetMap para: {lugar}...")
+    grafo = ox.graph_from_place(lugar, network_type="drive")
+
+    # Localizar os nós mais próximos para as coordenadas de início e destino
+    origem = ox.distance.nearest_nodes(grafo, lng_inicio, lat_inicio)
+    destino = ox.distance.nearest_nodes(grafo, lng_destino, lat_destino)
+
+    # Executar A* no grafo
+    print("Calculando rota usando A* no OpenStreetMap...")
+    distancia, caminho = a_star_real(grafo, origem, destino)
+
+    return distancia, caminho, grafo
+
+
 def desenhar_mapa(lat_inicio, lng_inicio, lat_destino, lng_destino):
     # Configuração do mapa com foco no estado de São Paulo
     mapa = Basemap(
@@ -186,9 +233,11 @@ def main():
         print("Não foram encontradas áreas verdes válidas no arquivo.")
         return
 
+    # Input do usuário
     nome_inicio = input("Informe o nome da área verde de início: ")
     nome_destino = input("Informe o nome da área verde de destino: ")
 
+    # Buscar coordenadas usando a API do Google Maps
     lat_inicio, lng_inicio = buscar_coordenadas_google(nome_inicio, dados_areas)
     if not (lat_inicio and lng_inicio):
         print("Não foi possível encontrar coordenadas para a área de início.")
@@ -212,7 +261,25 @@ def main():
         print("Não foi possível calcular a rota entre os pontos usando a API do Google.")
         return
 
-    # Cronômetro para cálculo da rota usando A*
+    # Calcular rota real usando OpenStreetMap e a_star_real
+    print("Calculando rota real com OpenStreetMap e A*...")
+    try:
+        inicio_tempo_osm = time.perf_counter()
+        distancia_osm_km, caminho_osm = a_star_real(lat_inicio, lng_inicio, lat_destino, lng_destino)
+        fim_tempo_osm = time.perf_counter()
+        tempo_osm = fim_tempo_osm - inicio_tempo_osm
+
+        if caminho_osm:
+            print(f"Distância calculada pelo A* (OpenStreetMap): {distancia_osm_km:.2f} km")
+            print(f"Tempo para cálculo da rota (OpenStreetMap): {tempo_osm:.6f} segundos")
+        else:
+            print("Não foi possível calcular a rota entre os pontos usando o A* com OpenStreetMap.")
+    except Exception as e:
+        print(f"Erro ao calcular a rota com OpenStreetMap: {e}")
+        return
+
+    # Cronômetro para cálculo da rota usando A* simplificado
+    print("Calculando rota com A* simplificado (grafo básico)...")
     inicio_tempo_a_star = time.perf_counter()
     grafo = {  # Grafo simplificado para A*
         (lat_inicio, lng_inicio): [((lat_destino, lng_destino), calcular_distancia_geodesica(lat_inicio, lng_inicio, lat_destino, lng_destino))],
@@ -223,10 +290,10 @@ def main():
     tempo_a_star = fim_tempo_a_star - inicio_tempo_a_star
 
     if custo_a_star != float('inf'):
-        print(f"Distância calculada pelo A*: {custo_a_star:.2f} km")
-        print(f"Tempo para cálculo da rota (A*): {tempo_a_star:.6f} segundos")
+        print(f"Distância calculada pelo A* simplificado: {custo_a_star:.2f} km")
+        print(f"Tempo para cálculo da rota (A* simplificado): {tempo_a_star:.6f} segundos")
     else:
-        print("Não foi possível calcular a rota entre os pontos usando o A*.")
+        print("Não foi possível calcular a rota entre os pontos usando o A* simplificado.")
 
     # Cronômetro para geração do mapa
     inicio_tempo_mapa = time.perf_counter()
@@ -236,7 +303,14 @@ def main():
 
     print(f"Tempo para geração do mapa: {tempo_mapa:.6f} segundos")
 
+    # Salvar imagem do mapa
     salvar_imagem(mapa)
+
+    # Informar rotas geradas
+    print("\nRotas calculadas:")
+    print(f"API do Google Maps: {caminho_google}")
+    print(f"OpenStreetMap (A*): {caminho_osm}")
+    print(f"A* simplificado: {caminho_a_star}")
 
 if __name__ == "__main__":
     main()
